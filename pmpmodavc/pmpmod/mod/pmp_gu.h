@@ -62,6 +62,7 @@ extern void *pmp_gu_draw_buffer;
 extern void *pmp_gu_avc_buffer;
 
 
+void pmp_gu_init_previous_values();
 void pmp_gu_start();
 void pmp_gu_end();
 void pmp_gu_wait();

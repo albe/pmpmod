@@ -726,6 +726,22 @@ static unsigned short get_next_utf16be( short** utf16 )
 	}
 
 
+static short* utf16be2le( short* utf16 )
+	{
+	if (utf16==0) return 0;
+	
+	#define SWAPBYTES(c) (((c&0xFF)<<8)|(c>>8))
+	
+	short* utf16le = utf16;
+	
+	while (*utf16le!=0)
+		{
+		*utf16le++ = SWAPBYTES(*utf16le);
+		}
+	return(utf16);
+	}
+
+
 #define HASH(x) (((unsigned int)((x&0xFF)+(unsigned int)(x>>8)*UNICODE_HASH_MULT))%UNICODE_HASH_SIZE)
 
 unsigned short gu_font_get_unicodechar( unsigned short unicode )
@@ -1546,6 +1562,7 @@ int gu_font_line_width_get( char* s )
 		c++;
 		}
 	if (lastcharstyle!=0) x+=4;
+	x+=8;
 	return (x);
 	}
 	
@@ -1584,6 +1601,7 @@ int gu_font_width_get( char* s, int flag )
 		c++;
 		}
 	if (lastcharstyle!=0) x+=4;
+	x+=8;
 	return (x>width?x:width);
 	}
 	
@@ -1614,6 +1632,7 @@ int gu_font_utf8_line_width_get( char* s )
 		c++;
 		}
 	if (lastcharstyle!=0) x+=4;
+	x+=8;
 	return (x);
 	}
 
@@ -1644,6 +1663,7 @@ int gu_font_utf16le_line_width_get( short* s )
 		c++;
 		}
 	if (lastcharstyle!=0) x+=4;
+	x+=8;
 	return (x);
 	}
 	
@@ -1675,6 +1695,7 @@ int gu_font_utf16be_line_width_get( short* s )
 		c++;
 		}
 	if (lastcharstyle!=0) x+=4;
+	x+=8;
 	return (x);
 	}
 	
@@ -1700,6 +1721,7 @@ int gu_font_utf8_width_get( char* s, int flag )
 		else if (ch=='\n')
 			{
 			if (lastcharstyle!=0) x+=4;
+			x+=8;
 			if (x>width) width=x;
 			x = 0;
 			}
@@ -1715,6 +1737,7 @@ int gu_font_utf8_width_get( char* s, int flag )
 		c++;
 		}
 	if (lastcharstyle!=0) x+=4;
+	x+=8;
 	return (x>width?x:width);
 	}
 
@@ -1740,6 +1763,7 @@ int gu_font_utf16le_width_get( short* s, int flag )
 		else if (ch=='\n')
 			{
 			if (lastcharstyle!=0) x+=4;
+			x+=8;
 			if (x>width) width=x;
 			x = 0;
 			}
@@ -1755,6 +1779,7 @@ int gu_font_utf16le_width_get( short* s, int flag )
 		c++;
 		}
 	if (lastcharstyle!=0) x+=4;
+	x+=8;
 	return (x>width?x:width);
 	}
 
@@ -1781,6 +1806,7 @@ int gu_font_utf16be_width_get( short* s, int flag )
 		else if (ch=='\n')
 			{
 			if (lastcharstyle!=0) x+=4;
+			x+=8;
 			if (x>width) width=x;
 			x = 0;
 			}
@@ -1796,6 +1822,7 @@ int gu_font_utf16be_width_get( short* s, int flag )
 		c++;
 		}
 	if (lastcharstyle!=0) x+=4;
+	x+=8;
 	return (x>width?x:width);
 	}
 

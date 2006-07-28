@@ -31,7 +31,13 @@ cpu clock routines
 
 #include <psppower.h>
 
+struct speed_setting_struct {
+	int cpu;
+	int ram;
+	int bus;
+};
 
+void cpu_clock_set_speed( struct speed_setting_struct *speed );
 void cpu_clock_set_maximum();
 void cpu_clock_set_minimum();
 

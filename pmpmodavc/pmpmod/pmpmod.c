@@ -173,12 +173,6 @@ void print_licence()
 
 
 
-struct speed_setting_struct {
-	int cpu;
-	int ram;
-	int bus;
-};
-
 struct speed_setting_struct speed_settings[] =
 {
 	{ 120, 120, 60 },
@@ -224,7 +218,7 @@ void main_loop()
 
 	while (1)
 		{
-		scePowerSetClockFrequency(111, 111, 56);
+		scePowerSetClockFrequency(120, 120, 60);
 		sceKernelDelayThread(200000);
 		
 		print_pmp(0);
@@ -246,6 +240,8 @@ void main_loop()
 				{
 				speed_mode++;
 				if (speed_mode>=max_speed_mode) speed_mode -= max_speed_mode;
+				cpu_clock_set_speed( &speed_settings[speed_mode] );
+
 				sceKernelDelayThread(200000);
 				}
 			
@@ -253,6 +249,7 @@ void main_loop()
 				{
 				speed_mode--;
 				if (speed_mode<0) speed_mode += max_speed_mode;
+				cpu_clock_set_speed( &speed_settings[speed_mode] );
 				sceKernelDelayThread(200000);
 				}
 			
@@ -364,7 +361,8 @@ void main_loop()
 		pspDebugScreenSetXY(0, 0);
 		pspDebugScreenPrintf("Loading ...");
 
-		scePowerSetClockFrequency(speed_settings[speed_mode].cpu, speed_settings[speed_mode].ram, speed_settings[speed_mode].bus);
+		if (speed_mode>0)
+			cpu_clock_set_minimum();
 
 		char *result = pmp_play(directory.directory_entry[selected_entry].d_name);
 		if (result != 0)

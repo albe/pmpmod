@@ -27,6 +27,14 @@ cpu clock routines
 
 #include "cpu_clock.h"
 
+struct speed_setting_struct current_speed;
+
+
+void cpu_clock_set_speed( struct speed_setting_struct *speed )
+	{
+	current_speed = *speed;
+	}
+
 
 void cpu_clock_set_maximum()
 	{
@@ -36,5 +44,8 @@ void cpu_clock_set_maximum()
 
 void cpu_clock_set_minimum()
 	{
-	scePowerSetClockFrequency(120, 120, 60);
+	if (current_speed.cpu<120) current_speed.cpu=120;
+	if (current_speed.ram<120) current_speed.ram=120;
+	if (current_speed.bus<60) current_speed.bus=60;
+	scePowerSetClockFrequency(current_speed.cpu, current_speed.ram, current_speed.bus);
 	}

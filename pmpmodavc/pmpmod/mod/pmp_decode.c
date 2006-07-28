@@ -201,7 +201,8 @@ char *pmp_decode_open(struct pmp_decode_struct *p, char *s)
 
 
 	p->current_buffer_number = 0;
-
+	
+	pmp_gu_init_previous_values();
 
 	return(0);
 	}
