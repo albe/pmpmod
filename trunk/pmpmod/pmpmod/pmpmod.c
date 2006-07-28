@@ -221,7 +221,7 @@ void main_loop()
 
 	while (1)
 		{
-		scePowerSetClockFrequency(111, 111, 56);
+		scePowerSetClockFrequency(120, 120, 60);
 		sceKernelDelayThread(200000);
 		
 		print_pmp(0);
