@@ -28,7 +28,7 @@ this lib should be used to play .pmp files
 #include "pmp.h"
 
 
-char *pmp_play(char *s)
+char *pmp_play(char *s, int usePos)
 	{
 	struct pmp_play_struct p;
 
@@ -36,17 +36,15 @@ char *pmp_play(char *s)
 	pmp_gu_start();
 
 
-	char *result = pmp_play_open(&p, s);
+	char *result = pmp_play_open(&p, s, usePos);
 	if (result == 0)
 		{
 		result = pmp_play_start(&p);
 
-		pmp_play_close(&p);
+		pmp_play_close(&p, usePos);
 		}
 
-
 	pmp_gu_end();
-
 
 	return(result);
 	}

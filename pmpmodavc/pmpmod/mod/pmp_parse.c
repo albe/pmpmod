@@ -81,15 +81,18 @@ void pmp_sub_frame_safe_destructor(struct pmp_sub_frame_struct *p)
 
 void pmp_sub_parse_safe_constructor(struct pmp_sub_parse_struct *p)
 	{
+		if (p->p_sub_frame != 0) pmp_sub_frame_safe_destructor(p->p_sub_frame);
 		p->p_sub_frame = 0;
 		p->p_num_sub_frames = 0;
 		p->p_cur_sub_frame = 0;
 		p->p_in = 0;
+		p->filename[0] = '\0';
 	}
 	
 
 void pmp_sub_parse_close(struct pmp_sub_parse_struct *p)
 	{
+		if (p==0) return;
 	    if (p->p_in != 0)        fclose(p->p_in);
 		if (p->p_sub_frame != 0) pmp_sub_frame_safe_destructor(p->p_sub_frame);
 		
@@ -101,11 +104,13 @@ char *pmp_sub_parse_search(char *folder, char *filename, unsigned int rate, unsi
 	{
 		struct opendir_struct directory;
 		
-		filename = strupr(filename);
+		char *fname, fbuffer[1024];
+		strncpy( fbuffer, filename, 1024 );
+		fname = strupr(fbuffer);
 		char format[1024];
-		char* ext = strrchr(filename,'.');
-		int format_sz = (ext-filename<1024?ext-filename:1023);
-		strncpy( format, filename, format_sz );
+		char* ext = strrchr(fname,'.');
+		int format_sz = (ext-fname<1024?ext-fname:1023);
+		strncpy( format, fname, format_sz );
 		format[format_sz] = '\0';
 		
 		*num_subtitles = 0;
@@ -116,7 +121,7 @@ char *pmp_sub_parse_search(char *folder, char *filename, unsigned int rate, unsi
 			0
 		};
 		
-		char *result = opendir_open(&directory, folder, filter);
+		char *result = opendir_open(&directory, folder, filter, SORT_NAME);
 		if (result != 0)
 			{
 			opendir_close(&directory);
@@ -174,7 +179,7 @@ char *pmp_sub_parse_open(struct pmp_sub_parse_struct *p, char *s, unsigned int r
 		struct pmp_sub_frame_struct *cur_frame = p->p_sub_frame;
 		
 		/* subtitle format selection here */
-		char *ext = s+strlen(s)-3;
+		char *ext = p->filename+strlen(p->filename)-3;
 		if (strncmp(strupr(ext),"SUB",3)==0)
 			pmp_sub_parse_line = &pmp_sub_parse_microdvd;
 		else if (strncmp(strupr(ext),"SRT",3)==0)
@@ -187,6 +192,7 @@ char *pmp_sub_parse_open(struct pmp_sub_parse_struct *p, char *s, unsigned int r
 
 		while ((new_frame=pmp_sub_parse_line( p->p_in, rate, scale ))!=0)
 			{
+			if (new_frame->p_start_frame<=cur_frame->p_end_frame) new_frame->p_start_frame=cur_frame->p_end_frame+1;
 			cur_frame->next = new_frame;
 			new_frame->prev = cur_frame;
 			cur_frame = new_frame;
@@ -216,23 +222,23 @@ char* pmp_sub_parse_get_frame(struct pmp_sub_parse_struct *p, struct pmp_sub_fra
 		*f = p->p_cur_sub_frame;
 		if (p->p_cur_sub_frame->p_start_frame<=frame && p->p_cur_sub_frame->p_end_frame>=frame) return(0);
 		
-		if (p->p_cur_sub_frame->p_end_frame<=frame)
+		if (p->p_cur_sub_frame->next!=0 && p->p_cur_sub_frame->next->p_start_frame<=frame)
 			{
 			// Forward search
-			while (p->p_cur_sub_frame->next!=0 && p->p_cur_sub_frame->p_end_frame<=frame)
+			while (p->p_cur_sub_frame->next!=0)
 				{
+				if (p->p_cur_sub_frame->next->p_start_frame>frame) break;
 				p->p_cur_sub_frame = p->p_cur_sub_frame->next;
 				*f = p->p_cur_sub_frame;
 				if (p->p_cur_sub_frame->p_start_frame<=frame && p->p_cur_sub_frame->p_end_frame>=frame) return(0);
-				if (p->p_cur_sub_frame->p_start_frame>=frame) break;
 				}
 			}
-		else if (p->p_cur_sub_frame->p_start_frame>=frame)
+		else if (p->p_cur_sub_frame->prev!=0 && p->p_cur_sub_frame->prev->p_end_frame>=frame)
 			{
 			// Backward search
 			while (p->p_cur_sub_frame->prev!=0)
 				{
-				if (p->p_cur_sub_frame->prev->p_end_frame<=frame) break;
+				if (p->p_cur_sub_frame->prev->p_end_frame<frame) break;
 				p->p_cur_sub_frame = p->p_cur_sub_frame->prev;
 				*f = p->p_cur_sub_frame;
 				if (p->p_cur_sub_frame->p_start_frame<=frame && p->p_cur_sub_frame->p_end_frame>=frame) return(0);

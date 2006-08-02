@@ -36,6 +36,15 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 #include "mem64.h"
 
 
+#define SORT_DEFAULT 0
+#define SORT_NAME 1
+#define SORT_SIZE 2
+#define SORT_MDATE 3
+#define SORT_CDATE SORT_DEFAULT
+#define SORT_MASK 0xff
+#define SORT_REVERSE 0x100
+
+
 struct opendir_struct
 	{
 	SceUID directory;
@@ -48,7 +57,7 @@ struct opendir_struct
 
 void opendir_safe_constructor(struct opendir_struct *p);
 void opendir_close(struct opendir_struct *p);
-char *opendir_open(struct opendir_struct *p, char *directory, char **filter);
+char *opendir_open(struct opendir_struct *p, char *directory, char **filter, int sort);
 
 
 #endif

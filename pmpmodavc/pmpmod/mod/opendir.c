@@ -50,7 +50,71 @@ void opendir_close(struct opendir_struct *p)
 	}
 
 
-char *opendir_open(struct opendir_struct *p, char *directory, char **filter)
+
+static int	strcmpupr( char* s1, char* s2 )
+	{
+	while (*s1 && *s2)
+		{
+		char c1 = *s1++;
+		char c2 = *s2++;
+
+		if ((c1 >= 'a') && (c1 <= 'z'))
+			c1 -= 'a' - 'A';
+		if ((c2 >= 'a') && (c2 <= 'z'))
+			c2 -= 'a' - 'A';
+
+		if (c1 > c2)
+			return 1;
+		if (c1 < c2)
+			return -1;
+		}
+	
+	if (*s1)
+		return 1;
+	if (*s2)
+		return -1;
+
+	return 0;
+	}
+
+
+static int datecmp( ScePspDateTime *dt1, ScePspDateTime *dt2 )
+	{
+	if (dt1->year>dt2->year)
+		return(1);
+	if (dt1->year<dt2->year)
+		return(-1);
+		
+	if (dt1->month>dt2->month)
+		return(1);
+	if (dt1->month<dt2->month)
+		return(-1);
+
+	if (dt1->day>dt2->day)
+		return(1);
+	if (dt1->day<dt2->day)
+		return(-1);
+
+	if (dt1->hour>dt2->hour)
+		return(1);
+	if (dt1->hour<dt2->hour)
+		return(-1);
+
+	if (dt1->minute>dt2->minute)
+		return(1);
+	if (dt1->minute<dt2->minute)
+		return(-1);
+
+	if (dt1->second>dt2->second)
+		return(1);
+	if (dt1->second<dt2->second)
+		return(-1);
+
+	return(0);
+	}
+
+
+char *opendir_open(struct opendir_struct *p, char *directory, char **filter, int sort)
 	{
 	opendir_safe_constructor(p);
 
@@ -181,6 +245,40 @@ char *opendir_open(struct opendir_struct *p, char *directory, char **filter)
 		return("opendir_open: number_of_directory_entries == 0");
 		}
 
+
+	if ((sort&SORT_MASK)>0)
+		{
+		
+		int		swap = 1;
+		while (swap)
+			{
+			swap = 0;
+
+			for (i = 0; i < p->number_of_directory_entries - 1; i++)
+				{
+				if (((sort&SORT_MASK)==SORT_NAME && strcmpupr( p->directory_entry[i].d_name , p->directory_entry[i+1].d_name) > 0) ||
+					((sort&SORT_MASK)==SORT_SIZE && p->directory_entry[i].d_stat.st_size > p->directory_entry[i+1].d_stat.st_size) ||
+					((sort&SORT_MASK)==SORT_MDATE && datecmp( &p->directory_entry[i].d_stat.st_mtime, &p->directory_entry[i+1].d_stat.st_mtime) > 0))
+					{
+					swap = 1;
+					
+					SceIoDirent temp = p->directory_entry[i];
+					p->directory_entry[i] = p->directory_entry[i+1];
+					p->directory_entry[i+1] = temp;
+					}
+				}
+			}
+		}
+		
+	if ((sort&SORT_REVERSE)==SORT_REVERSE)
+		{
+		for (i = 0; i < p->number_of_directory_entries/2; i++)
+			{
+			SceIoDirent temp = p->directory_entry[i];
+			p->directory_entry[i] = p->directory_entry[p->number_of_directory_entries-i-1];
+			p->directory_entry[p->number_of_directory_entries-i-1] = temp;
+			}
+		}
 
 	return(0);
 	}

@@ -44,7 +44,7 @@ void pmp_play_safe_constructor(struct pmp_play_struct *p)
 	}
 
 
-void pmp_play_close(struct pmp_play_struct *p)
+void pmp_play_close(struct pmp_play_struct *p, int usePos)
 	{
 	if (!(p->audio_reserved < 0)) sceAudioChRelease(0);
 
@@ -61,6 +61,8 @@ void pmp_play_close(struct pmp_play_struct *p)
 	int i = 0;
 	for (i=0; i<p->subtitle_count; i++)
 		pmp_sub_parse_close( &subtitle_parser[i] );
+	
+	if (usePos) pmp_stat_save( p );
 	
 	pmp_play_safe_constructor(p);
 	}
@@ -138,9 +140,6 @@ static int pmp_show_thread(SceSize input_length, void *input)
 
 
 
-#define MAX_FONTCOLORS 6
-#define MAX_BORDERCOLORS 6
-
 unsigned int FONTCOLORS[] =
 {	0xffffff,
 	0xff0000,
@@ -158,7 +157,6 @@ unsigned int BORDERCOLORS[] =
 	0x7f7f00,
 	0x007f7f
 };
-
 
 static void pmp_input(volatile struct pmp_play_struct *p, SceCtrlData *previous_controller)
 	{
@@ -250,12 +248,12 @@ static void pmp_input(volatile struct pmp_play_struct *p, SceCtrlData *previous_
 							}
 						else if ((controller.Buttons & PSP_CTRL_SQUARE) && ((previous_controller->Buttons & PSP_CTRL_SQUARE) == 0))
 							{
-							p->subtitle_fontcolor = (p->subtitle_fontcolor+1)%MAX_FONTCOLORS;
+							p->subtitle_fontcolor = (p->subtitle_fontcolor+1)%NUMBER_OF_FONTCOLORS;
 							gu_font_color_set( FONTCOLORS[p->subtitle_fontcolor] );
 							}
 						else if ((controller.Buttons & PSP_CTRL_CIRCLE) && ((previous_controller->Buttons & PSP_CTRL_CIRCLE) == 0))
 							{
-							p->subtitle_bordercolor = (p->subtitle_bordercolor+1)%MAX_BORDERCOLORS;
+							p->subtitle_bordercolor = (p->subtitle_bordercolor+1)%NUMBER_OF_BORDERCOLORS;
 							gu_font_border_color_set( BORDERCOLORS[p->subtitle_bordercolor] );
 							}
 						}
@@ -450,6 +448,17 @@ static int pmp_output_thread(SceSize input_length, void *input)
 
 static int pmp_next_video_frame(volatile struct pmp_play_struct *p, int current_video_frame)
 	{
+	// save last keyframe pos
+	if (p->decoder.reader.file.packet_index[current_video_frame] & 1)
+		p->last_keyframe_pos = current_video_frame;
+		
+	if (p->resume_pos>0)
+		{
+		int pos = p->resume_pos;
+		p->resume_pos = 0;
+		return(pos);
+		}
+	
 	if (p->seek > 0)
 		{
         int number_of_skips = 0;
@@ -580,23 +589,23 @@ char *pmp_play_start(volatile struct pmp_play_struct *p)
 	}
 
 
-char *pmp_play_open(struct pmp_play_struct *p, char *s)
+char *pmp_play_open(struct pmp_play_struct *p, char *s, int usePos)
 	{
 	pmp_play_safe_constructor(p);
-
+	p->subtitle = 0;
+	p->subtitle_count = 0;
 
 	
 	char *result = pmp_decode_open(&p->decoder, s);
 	if (result != 0)
 		{
-		pmp_play_close(p);
+		pmp_play_close(p, 0);
 		return(result);
 		}
 
 
 	
 	#define video_directory "ms0:/PSP/VIDEO/"
-	p->subtitle = 0;
 	if (pmp_sub_parse_search( video_directory, s, p->decoder.reader.file.header.video.rate, p->decoder.reader.file.header.video.scale, &p->subtitle_count)==0) p->subtitle = 1;
 
 	
@@ -604,7 +613,7 @@ char *pmp_play_open(struct pmp_play_struct *p, char *s)
 	p->audio_reserved = sceAudioChReserve(0, p->decoder.reader.file.header.audio.scale, PSP_AUDIO_FORMAT_STEREO);
 	if (p->audio_reserved < 0)
 		{
-		pmp_play_close(p);
+		pmp_play_close(p, 0);
 		return("pmp_play_open: sceAudioChReserve failed");
 		}
 
@@ -614,7 +623,7 @@ char *pmp_play_open(struct pmp_play_struct *p, char *s)
 	p->semaphore_can_get = sceKernelCreateSema("can_get", 0, 0, p->decoder.number_of_frame_buffers, 0);
 	if (p->semaphore_can_get < 0)
 		{
-		pmp_play_close(p);
+		pmp_play_close(p, 0);
 		return("pmp_play_open: sceKernelCreateSema failed on semaphore_can_get");
 		}
 
@@ -622,7 +631,7 @@ char *pmp_play_open(struct pmp_play_struct *p, char *s)
 	p->semaphore_can_put = sceKernelCreateSema("can_put", 0, p->decoder.number_of_frame_buffers, p->decoder.number_of_frame_buffers, 0);
 	if (p->semaphore_can_put < 0)
 		{
-		pmp_play_close(p);
+		pmp_play_close(p, 0);
 		return("pmp_play_open: sceKernelCreateSema failed on semaphore_can_put");
 		}
 
@@ -630,7 +639,7 @@ char *pmp_play_open(struct pmp_play_struct *p, char *s)
 	p->semaphore_can_show = sceKernelCreateSema("can_show", 0, 0, 1, 0);
 	if (p->semaphore_can_show < 0)
 		{
-		pmp_play_close(p);
+		pmp_play_close(p, 0);
 		return("pmp_play_open: sceKernelCreateSema failed on semaphore_can_show");
 		}
 
@@ -638,7 +647,7 @@ char *pmp_play_open(struct pmp_play_struct *p, char *s)
 	p->semaphore_show_done = sceKernelCreateSema("show_done", 0, 0, 1, 0);
 	if (p->semaphore_show_done < 0)
 		{
-		pmp_play_close(p);
+		pmp_play_close(p, 0);
 		return("pmp_play_open: sceKernelCreateSema failed on semaphore_show_done");
 		}
 
@@ -648,7 +657,7 @@ char *pmp_play_open(struct pmp_play_struct *p, char *s)
 	p->output_thread = sceKernelCreateThread("output", pmp_output_thread, 0x8, 0x10000, 0, 0);
 	if (p->output_thread < 0)
 		{
-		pmp_play_close(p);
+		pmp_play_close(p, 0);
 		return("pmp_play_open: sceKernelCreateThread failed on output_thread");
 		}
 
@@ -656,7 +665,7 @@ char *pmp_play_open(struct pmp_play_struct *p, char *s)
 	p->show_thread = sceKernelCreateThread("show", pmp_show_thread, 0x8, 0x10000, 0, 0);
 	if (p->show_thread < 0)
 		{
-		pmp_play_close(p);
+		pmp_play_close(p, 0);
 		return("pmp_play_open: sceKernelCreateThread failed on show_thread");
 		}
 
@@ -678,9 +687,13 @@ char *pmp_play_open(struct pmp_play_struct *p, char *s)
 	p->luminosity_boost = 0;
 	p->show_interface   = 0;
 	p->loop             = 0;
+	p->resume_pos		= 0;
+	p->last_keyframe_pos= 0;
 	p->subtitle_format  = (((gu_cur_font!=0) && (gu_cur_font->haveflags&GU_FONT_HAS_UNICODE_CHARMAP))?1:0);
 	p->subtitle_fontcolor = 0;
 	p->subtitle_bordercolor = 0;
+	
+	if (usePos) pmp_stat_load( p, s );
 
 	return(0);
 	}
