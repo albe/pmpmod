@@ -1,0 +1,14 @@
+
+Version 1.02M (02.08.06):
+
+- fixed rightmost cutting bug with newest FontGen 0.4+ fonts
+- fixed clipping bug in glyph blitter
+- fixed crash bug when trying to play non-avc videos
+- fixed uppercase bug in filelist
+- fixed non-showing subtitles bug when playing a short part twice in a row
+- subtitles are ordered by filename now, rather than creation time
+- added USB connection in filelist
+- added filesize/modification time display in filelist
+- added video information display (resolution, codec, fps, duration)
+- added resume function (start with O to skip resume)
+- added saving and loading of playback settings (audio stream, aspect, zoom, lumi/volume boost, subtitle/color)
