@@ -33,7 +33,7 @@ this lib should be used to play .pmp files
 #include "pmp_play.h"
 
 
-char *pmp_play(char *s);
+char *pmp_play(char *s, int usePos);
 
 
 #endif

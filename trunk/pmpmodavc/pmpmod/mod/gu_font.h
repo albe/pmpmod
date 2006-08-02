@@ -121,8 +121,8 @@ struct gu_font_struct {
 	unsigned short			*clut; //__attribute__((aligned(16))) clut[16];
 
 	struct gu_font_charmap_struct	*charmaps;
-	struct gu_char_struct	*chars;
-	unsigned char*			data;
+	//struct gu_char_struct	*chars;
+	//unsigned char*			data;
 	int						d_width;				// Bytewidth of bitmap
 	int						d_height;				// Byteheight of bitmap
 	int						haveflags;
@@ -131,6 +131,7 @@ struct gu_font_struct {
 	int						n_submaps;				// number of subsequent charmaps
 	
 	struct gu_font_unicode_list_struct **unicode_hash;
+	struct gu_font_unicode_list_struct *unicode_hash_mem;	// allocated hash memory pointer
 };
 
 
@@ -209,6 +210,7 @@ void gu_debug_print_charset();
 #endif
 char* gu_glyph_cache_init();
 void gu_glyph_cache_free();
+void gu_glyph_cache_reset();	// call this when VRAM gets reset (when calling sceGuTerm)
 struct gu_glyph_cache_struct* gu_glyph_cache_manager_get( char* s, int width, int height, int flags, int font_id );
 void gu_glyph_cache_manager_limit_glyph_caches( unsigned int n );
 

@@ -40,8 +40,6 @@ font rendering system
 #include "gu_font.h"
 
 
-//unsigned short __attribute__((aligned(16))) gu_font_clut[16];
-
 struct gu_font_struct* gu_cur_font = 0;					// Current set font
 static struct gu_font_manager_struct gu_font_manager;
 
@@ -52,9 +50,6 @@ static struct gu_glyph_cache_struct gu_glyph_temp_cache;		// temporary texture f
 
 
 static int gu_font_initialized = 0;
-//static int gu_font_border = 1;
-//static int gu_font_color = 0xffffff;
-//static int gu_font_border_color = 0;
 
 
 #define IsSet(val,flag) (val&flag)==flag
@@ -322,6 +317,23 @@ void gu_glyph_cache_free()
 	}
 
 
+void gu_glyph_cache_reset()
+	{
+	struct gu_glyph_cache_list_struct *list = gu_glyph_cache_manager.root;
+	struct gu_glyph_cache_list_struct *next;
+	while (list!=0)
+		{
+		next = list->next;
+		gu_glyph_cache_list_safe_destructor( list );
+		list = next;
+		}
+	gu_glyph_cache_manager.root = 0;
+	gu_glyph_cache_manager.tail = 0;
+	gu_glyph_cache_manager.num_caches = 0;
+	gu_glyph_cache_manager.lru_counter = 0;
+	}
+
+
 static inline void gu_glyph_cache_list_update( struct gu_glyph_cache_list_struct *p, char* s, int len, int size, int width, int height, int flags, int font_id )
 	{
 	p->cache->size = size;
@@ -560,48 +572,97 @@ void gu_glyph_cache_manager_limit_glyph_caches( unsigned int n )
 		This is barely noticeable if only small parts overlap, what should
 		most likely be the case.
 */
-static inline void gu_font_copy_glyph( int sx, int sy, int sh, char *s, int sstride, int dx, int dy, char *d, int dstride )
+static inline void gu_font_copy_glyph( int sx, int sy, int sw, int sh, char *s, int sstride, int dx, int dy, char *d, int dstride )
 {
 	int i;
 	if ((dx&0x7)==0) {
-		unsigned int* u32s = (unsigned int*)((unsigned int)s+((sx >> 1)+(sy*sstride)));
+		int sshift = (sx&0x7)<<2;
+		
+		unsigned int* u32s = (unsigned int*)((unsigned int)s+(((sx>>3)<<2)+(sy*sstride)));
 		unsigned int* u32d = (unsigned int*)((unsigned int)d+((dx >> 1)+(dy*dstride)));
 
+		if ((sw+(sx&0x7))<8)
 		// can do fast copy
 		for (i=0;i<sh;i++) {
+		  register unsigned int s1 = *u32s++;
+		  if (sshift)
+		  {
+			  s1 = (s1>>sshift);
+		  }
+
 		  // 32bit copy part
-		  *u32d++ |= *u32s++;
-		  *u32d++ |= *u32s++;
+		  *u32d++ |= s1;
+		  u32s += (sstride-4)>>2;
+		  u32d += (dstride-4)>>2;
+		}
+		else
+		// can do fast copy
+		for (i=0;i<sh;i++) {
+		  register unsigned int s1 = *u32s++;
+		  register unsigned int s2 = *u32s++;
+		  if (sshift)
+		  {
+			  s1 = (s1>>sshift) | (s2<<(32-sshift));
+			  s2 = (s2>>sshift);
+		  }
+
+		  // 32bit copy part
+		  *u32d++ |= s1;
+		  *u32d++ |= s2;
 		  u32s += (sstride-8)>>2;
 		  u32d += (dstride-8)>>2;
 		}
 	} else {
+		int sshift = (sx&0x7)<<2;
+			
+		unsigned int* u32s = (unsigned int*)((unsigned int)s+(((sx>>3)<<2)+(sy*sstride)));
+		unsigned int* u32d = (unsigned int*)((unsigned int)d+(((dx>>3)<<2)+(dy*dstride)));
+	
+		unsigned int mask = 0;
+		unsigned int shift = (dx&0x7)<<2;
+		for (i=0;i<(dx&0x7);i++) {
+			mask <<= 4;	
+			mask |= 0xf;
+		}
 
-	unsigned int* u32s = (unsigned int*)((unsigned int)s+((sx >> 1)+(sy*sstride)));
-	unsigned int* u32d = (unsigned int*)((unsigned int)d+(((dx>>3)<<2)+(dy*dstride)));
-
-	unsigned int mask = 0;
-	unsigned int shift = (dx&0x7)<<2;
-	for (i=0;i<(dx&0x7);i++) {
-		mask <<= 4;	
-		mask |= 0xf;
-	}
-
-	for (i=0;i<sh;i++) {
-	  unsigned int s1 = *u32s++;
-	  unsigned int s2 = *u32s++;
-	  
-	  // copy first halfbytes
-	  *u32d++ |= ((*u32d) & mask)|(s1 << shift);	// dst = |000xxxxx|
-	  
-	  *u32d++ |= (s1 >> (32-shift)) | (s2 << shift);	// dst = |000xxxxx|xxxyyyyy|
-	  
-	  // copy last halfbytes
-	  *u32d++ |= ((*u32d) & ~mask)|(s2 >> (32-shift));		// dst = |000xxxxx|xxxyyyyy|yyy00000|
-	  
-	  u32s += (sstride-8)>>2;
-	  u32d += (dstride-12)>>2;
-	}
+		if ((sw+(sx&0x7))<8)
+			for (i=0;i<sh;i++) {
+			  register unsigned int s1 = *u32s++;
+			  if (sshift)
+			  {
+				  s1 = (s1>>sshift);
+			  }
+			  
+			  // copy first halfbytes
+			  *u32d++ |= ((*u32d) & mask)|(s1 << shift);	// dst = |000xxxxx|
+			  
+			  // copy last halfbytes
+			  *u32d++ |= (s1 >> (32-shift));	// dst = |000xxxxx|xxx00000|
+			  
+			  u32s += (sstride-4)>>2;
+			  u32d += (dstride-8)>>2;
+			}
+		else
+			for (i=0;i<sh;i++) {
+			  register unsigned int s1 = *u32s++;
+			  register unsigned int s2 = *u32s++;
+			  if (sshift)
+			  {
+				  s1 = (s1>>sshift) | (s2<<(32-sshift));
+				  s2 = (s2>>sshift);
+			  }
+			  
+			  // copy first halfbytes
+			  *u32d++ |= ((*u32d) & mask)|(s1 << shift);	// dst = |000xxxxx|
+			  
+			  *u32d++ |= (s1 >> (32-shift)) | (s2 << shift);	// dst = |000xxxxx|xxxyyyyy|
+			  
+			  // copy last halfbytes
+			  *u32d++ |= ((*u32d) & ~mask)|(s2 >> (32-shift));		// dst = |000xxxxx|xxxyyyyy|yyy00000|
+			  
+			  u32s += (sstride-8)>>2;
+			  u32d += (dstride-12)>>2;
+			}
 
 	}
 }
@@ -647,7 +708,7 @@ static inline void gu_font_cache_glyph( int x, int y, unsigned short c, int flag
 
 	if (sh==0 || sw==0) return;
 	
-	gu_font_copy_glyph( sx, sy, sh, (char*)gu_cur_font->charmaps[c>>8].data, gu_cur_font->d_width, dx, dy, (char*)((unsigned int)cache | 0x40000000), stride );
+	gu_font_copy_glyph( sx, sy, sw, sh, (char*)gu_cur_font->charmaps[c>>8].data, gu_cur_font->d_width, dx, dy, (char*)((unsigned int)cache | 0x40000000), stride );
 	}
 
 
@@ -726,11 +787,10 @@ static unsigned short get_next_utf16be( short** utf16 )
 	}
 
 
+#define SWAPBYTES(c) ((((c)&0xFF)<<8)|((c)>>8))
 static short* utf16be2le( short* utf16 )
 	{
 	if (utf16==0) return 0;
-	
-	#define SWAPBYTES(c) (((c&0xFF)<<8)|(c>>8))
 	
 	short* utf16le = utf16;
 	
@@ -777,18 +837,19 @@ unsigned short gu_font_get_unicodechar( unsigned short unicode )
 static int gu_font_parse_bbcode( char** c,  int* style )
 	{
 	if (c==0 || *c==0) return(0);
-	if ((*c)[0]=='[')
+	register char c0 = (*c)[0], c1 = (*c)[1], c2 = (*c)[2], c3 = (*c)[3];
+	if (c0=='[')
 		{
 		// parse bbcode formatting
-		if ((*c)[1]=='/' && (*c)[3]==']')
+		if (c1=='/' && c3==']')
 			{
-			if ((*c)[2]=='i' || (*c)[2]=='I')
+			if (c2=='i' || c2=='I')
 				{
 				*style &= ~GU_FONT_ITALIC;
 				(*c)+=3;
 				}
 			else
-			if ((*c)[2]=='b' || (*c)[2]=='B')
+			if (c2=='b' || c2=='B')
 				{
 				*style &= ~GU_FONT_BOLD;
 				(*c)+=3;
@@ -796,15 +857,15 @@ static int gu_font_parse_bbcode( char** c,  int* style )
 			else
 				return(0);
 			}
-		else if ((*c)[2]==']')
+		else if (c2==']')
 			{
-			if ((*c)[1]=='i' || (*c)[1]=='I')
+			if (c1=='i' || c1=='I')
 				{
 				*style |= GU_FONT_ITALIC;
 				(*c)+=2;
 				}
 			else
-			if ((*c)[1]=='b' || (*c)[1]=='B')
+			if (c1=='b' || c1=='B')
 				{
 				*style |= GU_FONT_BOLD;
 				(*c)+=2;
@@ -825,18 +886,19 @@ static int gu_font_parse_bbcode( char** c,  int* style )
 static int gu_font_utf16le_parse_bbcode( short** c,  int* style )
 	{
 	if (c==0 || *c==0) return(0);
-	if ((*c)[0]=='[')
+	register short c0 = (*c)[0], c1 = (*c)[1], c2 = (*c)[2], c3 = (*c)[3];
+	if (c0=='[')
 		{
 		// parse bbcode formatting
-		if ((*c)[1]=='/' && (*c)[3]==']')
+		if (c1=='/' && c3==']')
 			{
-			if ((*c)[2]=='i' || (*c)[2]=='I')
+			if (c2=='i' || c2=='I')
 				{
 				*style &= ~GU_FONT_ITALIC;
 				(*c)+=3;
 				}
 			else
-			if ((*c)[2]=='b' || (*c)[2]=='B')
+			if (c2=='b' || c2=='B')
 				{
 				*style &= ~GU_FONT_BOLD;
 				(*c)+=3;
@@ -844,15 +906,15 @@ static int gu_font_utf16le_parse_bbcode( short** c,  int* style )
 			else
 				return(0);
 			}
-		else if ((*c)[2]==']')
+		else if (c2==']')
 			{
-			if ((*c)[1]=='i' || (*c)[1]=='I')
+			if (c1=='i' || c1=='I')
 				{
 				*style |= GU_FONT_ITALIC;
 				(*c)+=2;
 				}
 			else
-			if ((*c)[1]=='b' || (*c)[1]=='B')
+			if (c1=='b' || c1=='B')
 				{
 				*style |= GU_FONT_BOLD;
 				(*c)+=2;
@@ -873,7 +935,6 @@ static int gu_font_utf16le_parse_bbcode( short** c,  int* style )
 static int gu_font_utf16be_parse_bbcode( short** c,  int* style )
 	{
 	if (c==0 || *c==0) return(0);
-	#define SWAPBYTES(c) (((c&0xFF)<<8)|(c>>8))
 	
 	if (SWAPBYTES((*c)[0])=='[')
 		{
@@ -1092,9 +1153,8 @@ void gu_font_unicode_hash_safe_constructor( struct gu_font_struct* f )
 void gu_font_unicode_hash_safe_destructor( struct gu_font_struct* f )
 	{
 	if (f==0 || f->unicode_hash==0) return;
-	int l;
-	for (l=0;l<UNICODE_HASH_SIZE;l++)
-		gu_font_charmap_list_safe_destructor( f->unicode_hash[l] );
+	if (f->unicode_hash_mem!=0) free(f->unicode_hash_mem);
+	f->unicode_hash_mem = 0;
 	free(f->unicode_hash);
 	}
 
@@ -1130,8 +1190,7 @@ void gu_font_safe_destructor(struct gu_font_struct *f)
 		free(f->charmaps);
 		f->charmaps = 0;
 		}
-	if (f->unicode_hash!=0)
-		gu_font_unicode_hash_safe_destructor( f );
+	gu_font_unicode_hash_safe_destructor( f );
 	free(f);
 	}
 	
@@ -1161,12 +1220,6 @@ char* gu_font_init()
 	char* result = gu_glyph_cache_init();
 	if (result!=0)
 		return(result);
-	
-	// Create a white color CLUT usable by GU 
-	// We now have per-font CLUT
-	/*gu_font_color_set( 0xFFFFFF );
-	gu_font_border_color_set( 0x000000 );	// Black border
-	gu_font_initialized = 1;*/
 	
 	return(0);
 	}
@@ -1338,21 +1391,22 @@ char* gu_font_load( char* name )
 				goto READ_CHARMAPS;
 				}
 			sceIoRead( fd,unicode_charmap,n_charcodes*sizeof(unsigned short) );
+			// Allocate one big block of unicode table memory instead of thousands of single table entries
+			f->unicode_hash_mem = malloc(n_charcodes*sizeof(struct gu_font_unicode_list_struct));
+			if (f->unicode_hash_mem==0)
+				{
+				free(f->unicode_hash);
+				printf("malloc failed on unicode_hash_mem!\n");
+				goto READ_CHARMAPS;
+				}
 			f->haveflags |= GU_FONT_HAS_UNICODE_CHARMAP;
 			int k = 0;
 			while (k<n_charcodes)
 				{
 				if (unicode_charmap[k]!=0)
 					{
-					struct gu_font_unicode_list_struct* new_item = malloc(sizeof(struct gu_font_unicode_list_struct));
-					if (new_item==0)
-						{
-						f->haveflags &= ~GU_FONT_HAS_UNICODE_CHARMAP;
-						gu_font_unicode_hash_safe_destructor( f );
-						f->unicode_hash = 0;
-						break;
-						}
-					
+					struct gu_font_unicode_list_struct* new_item = &f->unicode_hash_mem[k];
+
 					unsigned int hash = HASH(unicode_charmap[k]);
 					new_item->unicode = unicode_charmap[k];
 					new_item->charcode = k;
@@ -1536,7 +1590,6 @@ void gu_font_color_set( int color )
 
 
 
-// FIXME: returned width for asian chars is too small
 int gu_font_line_width_get( char* s )
 	{
 	if (s==0 || gu_cur_font==0) return 0;
@@ -1587,6 +1640,7 @@ int gu_font_width_get( char* s, int flag )
 		else if (*c=='\n')
 			{
 			if (lastcharstyle!=0) x+=4;
+			x+=8;
 			if (x>width) width=x;
 			x = 0;
 			}
@@ -1675,7 +1729,6 @@ int gu_font_utf16be_line_width_get( short* s )
 	int x = 0;
 	int style = 0;
 	int lastcharstyle = 0;
-	#define SWAPBYTES(c) (((c&0xFF)<<8)|(c>>8))
 	
 	while (*c!=0 && SWAPBYTES(*c)!='\n')
 		{
@@ -1793,7 +1846,6 @@ int gu_font_utf16be_width_get( short* s, int flag )
 	if (flag == 0) flag--;
 	int style=0;
 	int lastcharstyle=0;
-	#define SWAPBYTES(c) (((c&0xFF)<<8)|(c>>8))
 	
 	unsigned short ch;
 	while ((ch=(unsigned short)SWAPBYTES((*c)))!=0 && flag!=0)
@@ -1942,6 +1994,7 @@ void gu_font_print( int x, int y, int flags, char* s )
 		height = gu_font_height_get( s );
 		}
 		
+	if (height>512) height=512;
 	int stride = next_pow2(width);
 	int tex_height = next_pow2(height);
 
@@ -1961,6 +2014,8 @@ void gu_font_print( int x, int y, int flags, char* s )
 
 
 	// string is now in cache, so just draw
+	int status = sceGuGetAllStatus();
+	sceGuEnable(GU_TEXTURE_2D);
 	sceGuClutMode(GU_PSM_4444,0,0xff,0); // 16-bit palette
 	sceGuClutLoad((8/8),gu_cur_font->clut); // upload 2*8 entries (16)
 	sceGuTexMode(GU_PSM_T4,0,0,0); // 4-bit image, but unswizzled
@@ -1977,5 +2032,7 @@ void gu_font_print( int x, int y, int flags, char* s )
 	
 	sceGuTexFunc(GU_TFX_REPLACE,GU_TCC_RGBA);
 	blit_fast( 0, 0, width, height, x, y );
+	
+	sceGuSetAllStatus(status);
 	}
 	

@@ -203,6 +203,7 @@ char *pmp_decode_open(struct pmp_decode_struct *p, char *s)
 	p->current_buffer_number = 0;
 	
 	pmp_gu_init_previous_values();
+	gu_glyph_cache_reset();
 
 	return(0);
 	}

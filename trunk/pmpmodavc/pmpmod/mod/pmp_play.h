@@ -70,6 +70,9 @@ struct pmp_play_struct
 	unsigned int zoom;
 	unsigned int luminosity_boost;
 	unsigned int show_interface;
+	unsigned int last_keyframe_pos;
+	unsigned int resume_pos;
+	char          resume_filename[256];
 	unsigned int subtitle_count;
 	unsigned int subtitle;
 	unsigned int subtitle_format;
@@ -79,9 +82,14 @@ struct pmp_play_struct
 	};
 
 
+
+#define NUMBER_OF_FONTCOLORS 6
+#define NUMBER_OF_BORDERCOLORS 6
+
+#include "pmp_stat.h"
 void pmp_play_safe_constructor(struct pmp_play_struct *p);
-char *pmp_play_open(struct pmp_play_struct *p, char *s);
-void pmp_play_close(struct pmp_play_struct *p);
+char *pmp_play_open(struct pmp_play_struct *p, char *s, int usePos);
+void pmp_play_close(struct pmp_play_struct *p, int usePos);
 char *pmp_play_start(volatile struct pmp_play_struct *p);
 
 
