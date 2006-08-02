@@ -370,7 +370,7 @@ void main_loop()
 		selected_changed = 1;
 		
 		//----------------
-		//initUSBdrivers();
+		initUSBdrivers();
 		//----------------
 
 		if (speed_mode>0)
@@ -597,7 +597,7 @@ void main_loop()
 
 
 		//----------------
-		//exitUSBdrivers();
+		exitUSBdrivers();
 		//----------------
 		
 		screen_init();
