@@ -3,6 +3,53 @@
 
 #undef printf
 
+
+void pmp_stat_read( char* s, int* pos, int* vol, int* aspect, int* zoom, int* lum, int* sub, int* subfmt, int* subfcol, int* subbcol )
+	{
+	char filename[256];
+	snprintf( filename, 256, "%s.pos", s);
+	
+	SceUID	fd;
+	
+	
+	if (pos) *pos = 0;
+	if (vol) *vol = 0;
+	if (aspect) *aspect = 0;
+	if (zoom) *zoom = 100;
+	if (lum) *lum = 0;
+	if (sub) *sub = 0;
+	if (subfmt) *subfmt = 0;
+	if (subfcol) *subfcol = 0;
+	if (subbcol) *subbcol = 0;
+
+	#define clamp(v,x,y) ((v<x)?(v=x):(v>y)?(v=y):v)
+	
+	if((fd = sceIoOpen( filename, PSP_O_RDONLY, 0777))>=0)
+		{
+		int val;
+		sceIoRead( fd, &val, sizeof(int) );
+		if (pos) *pos = val;
+		sceIoRead( fd, &val, sizeof(int) );
+		if (vol) *vol = clamp(val,0,3);
+		sceIoRead( fd, &val, sizeof(int) );
+		if (aspect) *aspect = clamp(val,0,number_of_aspect_ratios-1);
+		sceIoRead( fd, &val, sizeof(int) );
+		if (zoom) *zoom = clamp(val,100,200);
+		sceIoRead( fd, &val, sizeof(int) );
+		if (lum) *lum = clamp(val,0,number_of_luminosity_boosts-1);
+		sceIoRead( fd, &val, sizeof(int) );
+		if (sub) *sub = clamp(val,0,MAX_SUBTITLES);
+		sceIoRead( fd, &val, sizeof(int) );
+		if (subfmt) *subfmt = clamp(val,0,1);
+		sceIoRead( fd, &val, sizeof(int) );
+		if (subfcol) *subfcol = clamp(val,0,NUMBER_OF_FONTCOLORS-1);
+		sceIoRead( fd, &val, sizeof(int) );
+		if (subbcol) *subbcol = clamp(val,0,NUMBER_OF_BORDERCOLORS-1);
+		sceIoClose(fd);
+		}
+	}
+
+
 void pmp_stat_load( struct pmp_play_struct *p, char* s )
 	{
 	if (p==0) return;
@@ -12,7 +59,7 @@ void pmp_stat_load( struct pmp_play_struct *p, char* s )
 	SceUID	fd;
 
 	// device:path
-	if((fd = sceIoOpen( p->resume_filename, PSP_O_RDONLY, 0777)))
+	if((fd = sceIoOpen( p->resume_filename, PSP_O_RDONLY, 0777))>=0)
 		{
 		sceIoRead( fd, &p->resume_pos, sizeof(int) );
 		sceIoRead( fd, &p->audio_stream, sizeof(int) );
@@ -65,7 +112,7 @@ void pmp_stat_save( struct pmp_play_struct *p )
 	SceUID	fd;
 	
 	// device:path
-	if((fd = sceIoOpen( p->resume_filename, PSP_O_WRONLY|PSP_O_CREAT, 0777)))
+	if((fd = sceIoOpen( p->resume_filename, PSP_O_WRONLY|PSP_O_CREAT, 0777))>=0)
 		{
 		sceIoWrite( fd, &p->last_keyframe_pos, sizeof(int) );
 		//printf("pos.\n");
