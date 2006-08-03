@@ -212,7 +212,7 @@ char *opendir_open(struct opendir_struct *p, char *directory, char **filter, int
 					{
 					char name[1024];
 					strncpy(name,directory_entry.d_name + strlen(directory_entry.d_name) - strlen(filter[j]),1024);
-					if (strcmp(strupr(name),strupr(filter[j]))==0)
+					if (strcmpupr(name,filter[j])==0)
 						{
 						p->directory_entry[p->number_of_directory_entries] = directory_entry;
 						p->number_of_directory_entries++;

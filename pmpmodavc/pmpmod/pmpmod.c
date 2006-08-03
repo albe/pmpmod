@@ -35,6 +35,7 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 #include "avc.h"
 #include "cpu_clock.h"
 #include "pmp_file.h"
+#include "pmp_stat.h"
 
 #include "valloc.h"
 #include "gu_font.h"
@@ -83,6 +84,8 @@ void print_error(char *s)
 	}
 
 
+int pspDateFmt, pspTimeFmt;
+
 char *static_init()
 	{
 	cpu_clock_set_minimum();
@@ -93,6 +96,9 @@ char *static_init()
 	sceCtrlSetSamplingMode(PSP_CTRL_MODE_ANALOG);
 
 
+	sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_DATE_FORMAT, &pspDateFmt);
+	sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_TIME_FORMAT, &pspTimeFmt);
+	
 	av_register_all();
 
 	// Static VRAM allocations needed in pmp_gu.c
@@ -132,8 +138,11 @@ int init()
 
 //------------------------------------
 
+int usbActive = 0;
+
 void initUSBdrivers(void)
 	{
+	if (usbActive) return;
 	int exec_pu;
 	
 	exec_pu=sceKernelLoadModule("flash0:/kd/semawm.prx",0,NULL);
@@ -163,59 +172,35 @@ void initUSBdrivers(void)
 	}
 
 	sceUsbActivate(0x1c8);
+	usbActive = 1;
 	} 
 
 
 void exitUSBdrivers(void)
 	{
+	if (!usbActive) return;
 	sceUsbDeactivate(0x1c8);
 
 	// FIXME: last arg should be NULL (wrong prototype in pspsdk?)
 	sceUsbStop("USBStor_Driver",0,0);
 	sceUsbStop("USBBusDriver",0,0);
+	usbActive = 0;
 	} 
 
 
 char* pmp_read_vid_header( struct pmp_header_struct *pmp_vid_header, char* s )
 	{
-	FILE* f = fopen(s, "rb");
-	if (f == 0)
-		{
-		return("pmp_lib_open: can't open file");
-		}
-
-
-	if (fread(pmp_vid_header, 1, sizeof(struct pmp_header_struct), f) != sizeof(struct pmp_header_struct))
-		{
-		return("pmp_lib_open: can't read video header");
-		}
-		
-	fclose(f);
-	return (0);
-	}
-
-
-void pmp_read_stat( char* s, unsigned int* pos, unsigned int* vol, unsigned int* aspect, unsigned int* zoom )
-	{
-	char filename[256];
-	snprintf( filename, 256, "%s.pos", s);
-	
 	SceUID	fd;
-
-	*pos = 0;
-	*vol = 0;
-	*aspect = 0;
-	*zoom = 100;
 	
-	// device:path
-	if((fd = sceIoOpen( filename, PSP_O_RDONLY, 0777)))
+	if((fd = sceIoOpen( s, PSP_O_RDONLY, 0777)))
 		{
-		sceIoRead( fd, pos, sizeof(int) );
-		sceIoRead( fd, vol, sizeof(int) );
-		sceIoRead( fd, aspect, sizeof(int) );
-		sceIoRead( fd, zoom, sizeof(int) );
+		if (sceIoRead( fd, pmp_vid_header, sizeof(struct pmp_header_struct) )!=sizeof(struct pmp_header_struct))
+			return("pmp_lib_open: can't read video header");
 		sceIoClose(fd);
 		}
+	else
+		return("pmp_lib_open: can't open file");
+	return(0);
 	}
 
 
@@ -267,6 +252,67 @@ void print_licence()
 	}
 
 
+int print_confirmation( char* s )
+	{
+	pspDebugScreenSetTextColor(0xffffff);
+	pspDebugScreenSetBackColor(0x000000);
+	pspDebugScreenSetXY(12, 12);
+	pspDebugScreenPrintf("%-44.44s","");
+	pspDebugScreenSetXY(12, 13);
+	pspDebugScreenPrintf("%-44.44s"," Are you sure you want to delete the file");
+	pspDebugScreenSetXY(12, 14);
+	pspDebugScreenPrintf("%-44.44s","");
+	pspDebugScreenSetXY(12, 14);
+	pspDebugScreenPrintf(" '%s'?", s);
+	pspDebugScreenSetXY(12, 15);
+	pspDebugScreenPrintf("%-44.44s","");
+	pspDebugScreenSetXY(12, 16);
+	pspDebugScreenPrintf("%-44.44s"," Press X to accept, any other to cancel.");
+	pspDebugScreenSetXY(12, 17);
+	pspDebugScreenPrintf("%-44.44s","");
+	
+	sceKernelDelayThread(2000000);
+	while (1)
+		{
+		SceCtrlData controller;
+		sceCtrlReadBufferPositive(&controller, 1);
+
+		if (controller.Buttons & PSP_CTRL_CROSS)
+			return(1);
+		if (controller.Buttons & PSP_CTRL_CIRCLE || controller.Buttons & PSP_CTRL_TRIANGLE || controller.Buttons & PSP_CTRL_SQUARE || controller.Buttons & PSP_CTRL_START || controller.Buttons & PSP_CTRL_SELECT)
+			return(0);
+		}
+	}
+
+
+static int	strncmpupr( char* s1, char* s2, int n )
+	{
+	int i = 0;
+	while (*s1 && *s2 && i++<n)
+		{
+		char c1 = *s1++;
+		char c2 = *s2++;
+
+		if ((c1 >= 'a') && (c1 <= 'z'))
+			c1 -= 'a' - 'A';
+		if ((c2 >= 'a') && (c2 <= 'z'))
+			c2 -= 'a' - 'A';
+
+		if (c1 > c2)
+			return 1;
+		if (c1 < c2)
+			return -1;
+		}
+	
+	if (i<n)
+	{
+		if (*s1==0 && *s2!=0)
+			return -1;
+		if (*s2==0 && *s1!=0)
+			return 1;
+	}
+	return 0;
+	}
 
 struct speed_setting_struct speed_settings[] =
 {
@@ -280,6 +326,13 @@ struct speed_setting_struct speed_settings[] =
 char* filelist_filter[] =
 {
 	".pmp",
+	0,
+};
+
+char* filelist_sub_filter[] =
+{
+	".sub",
+	".srt",
 	0,
 };
 
@@ -298,15 +351,12 @@ void pmp_fileinfo_printf( char *s, struct SceIoDirent *d )
 	
 	char datefmt[11] = "\0";
 	char timefmt[11] = "\0";
-	int val;
-	sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_DATE_FORMAT, &val);
-	switch (val) {
+	switch (pspDateFmt) {
 		case PSP_SYSTEMPARAM_DATE_FORMAT_YYYYMMDD: strftime(datefmt,11,"%Y/%m/%d", &date); break;
 		case PSP_SYSTEMPARAM_DATE_FORMAT_MMDDYYYY: strftime(datefmt,11,"%m/%d/%Y", &date); break;
 		case PSP_SYSTEMPARAM_DATE_FORMAT_DDMMYYYY: strftime(datefmt,11,"%d.%m.%Y", &date); break;
 	};
-	sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_TIME_FORMAT, &val);
-	switch (val) {
+	switch (pspTimeFmt) {
 		case PSP_SYSTEMPARAM_TIME_FORMAT_24HR: strftime(timefmt,6,"%H:%M", &date); break;
 		case PSP_SYSTEMPARAM_TIME_FORMAT_12HR: strftime(timefmt,11,"%I:%M%p", &date); break;
 	};
@@ -339,7 +389,7 @@ void main_loop()
 	{
 	struct opendir_struct directory;
 	struct pmp_header_struct header;
-	unsigned int vwidth = 0, vheight = 0, vframes = 0, vformat = 0, vpos = 0, vvol = 0, vaspect = 0, vzoom = 0;
+	int vwidth = 0, vheight = 0, vframes = 0, vformat = 0, vpos = 0, vvol = 0, vaspect = 0, vzoom = 0, vnsubs = 0;
 	float vrate = 0;
 
 
@@ -352,11 +402,13 @@ void main_loop()
 	int max_speed_mode         = sizeof(speed_settings) / sizeof(struct speed_setting_struct);
 	int speed_mode             = 0;
 	int total_size             = 0;
+	int update_delay           = 0;
+	int first_frame            = 1;
 	
 
 	while (1)
 		{
-		char *result = opendir_open(&directory, video_directory, filelist_filter, SORT_DEFAULT);
+		char *result = opendir_open(&directory, video_directory, filelist_filter, SORT_NAME);
 		if (result != 0)
 			{
 			print_pmp(1);
@@ -380,13 +432,23 @@ void main_loop()
 		print_pmp(0);
 		
 
-        SceCtrlData controller;
-
+        SceCtrlData controller, previous;
+		sceCtrlReadBufferPositive(&controller, 1);
 		while (1)
 			{
-			sceCtrlReadBufferPositive(&controller, 1);
+			if (update_delay)
+				sceKernelDelayThread(update_delay);
+			update_delay = 0;
 
-			if (controller.Buttons & PSP_CTRL_CROSS || controller.Buttons & PSP_CTRL_CIRCLE || controller.Buttons & PSP_CTRL_TRIANGLE || controller.Buttons & PSP_CTRL_SQUARE || controller.Buttons & PSP_CTRL_START)
+			previous = controller;
+			if (first_frame==0)
+			while (1)
+			{
+				sceCtrlReadBufferPositive(&controller, 1);
+				if (controller.Buttons!=0) break;
+			}
+
+			if (controller.Buttons & PSP_CTRL_CROSS || controller.Buttons & PSP_CTRL_CIRCLE || controller.Buttons & PSP_CTRL_TRIANGLE || controller.Buttons & PSP_CTRL_SQUARE || controller.Buttons & PSP_CTRL_START || controller.Buttons & PSP_CTRL_SELECT)
 				{
 				break;
 				}
@@ -397,8 +459,7 @@ void main_loop()
 				speed_mode++;
 				if (speed_mode>=max_speed_mode) speed_mode -= max_speed_mode;
 				cpu_clock_set_speed( &speed_settings[speed_mode] );
-
-				sceKernelDelayThread(200000);
+				update_delay = 250000;
 				}
 			
 			if (controller.Buttons & PSP_CTRL_LTRIGGER)
@@ -406,7 +467,7 @@ void main_loop()
 				speed_mode--;
 				if (speed_mode<0) speed_mode += max_speed_mode;
 				cpu_clock_set_speed( &speed_settings[speed_mode] );
-				sceKernelDelayThread(200000);
+				update_delay = 250000;
 				}
 			
 			
@@ -421,6 +482,11 @@ void main_loop()
 						{
 						top_entry++;
 						}
+						
+					if ((previous.Buttons & PSP_CTRL_DOWN) == 0)
+						update_delay = 330000;
+					else
+						update_delay = 10000;
 					}
 				}
 
@@ -436,11 +502,17 @@ void main_loop()
 						{
 						top_entry--;
 						}
+						
+					if ((previous.Buttons & PSP_CTRL_UP) == 0)
+						update_delay = 330000;
+					else
+						update_delay = 10000;
 					}
 				}
 
 			if (selected_changed)
 				{
+				// Update selected file information
 				if (pmp_read_vid_header(&header, directory.directory_entry[selected_entry].d_name)==0)
 					{
 					vformat = header.video.format;
@@ -455,14 +527,35 @@ void main_loop()
 					vframes = header.video.number_of_frames;
 					selected_changed = 0;
 					}
-				pmp_read_stat( directory.directory_entry[selected_entry].d_name, &vpos, &vvol, &vaspect, &vzoom );
+				pmp_stat_read( directory.directory_entry[selected_entry].d_name, &vpos, &vvol, &vaspect, &vzoom, NULL, NULL, NULL, NULL, NULL );
+				
+				struct opendir_struct dir;
+				vnsubs = 0;
+				char *result = opendir_open(&dir, video_directory, filelist_sub_filter, SORT_DEFAULT);
+				if (result == 0)
+					{
+					char *fname = directory.directory_entry[selected_entry].d_name;
+					char format[256];
+					char* ext = strrchr(fname,'.');
+					int format_sz = (ext-fname<256?ext-fname:255);
+					strncpy( format, fname, format_sz );
+					format[format_sz] = '\0';
+					
+					int i = 0;
+					while (i < dir.number_of_directory_entries)
+						if (strncmpupr(dir.directory_entry[i++].d_name,format,format_sz)==0)
+						{
+							vnsubs++;
+							if (vnsubs>=MAX_SUBTITLES) break;
+						}
+					}
+				opendir_close(&dir);
 				}
 
 
 			pspDebugScreenSetXY(1, starting_row);
 			pspDebugScreenSetTextColor(0xffffff);
 			pspDebugScreenSetBackColor(0xaa4400);
-			//pspDebugScreenPrintf("%-66.66s", "");
 			pspDebugScreenPrintf("%-37.37s %8.8s  %-18.18s", "Filename", "Size", "Date");
 
 			total_size = 0;
@@ -504,8 +597,8 @@ void main_loop()
 			pspDebugScreenSetXY(1, starting_row + maximum_number_of_rows + 1);
 			pspDebugScreenSetTextColor(0xffffff);
 			pspDebugScreenSetBackColor(0xaa4400);
-			char speed[128];
-			snprintf(speed,128,"speed setting: (%i,%i,%i)",speed_settings[speed_mode].cpu,speed_settings[speed_mode].ram,speed_settings[speed_mode].bus);
+			char speed[64];
+			snprintf(speed,64,"speed setting: (%i,%i,%i)",speed_settings[speed_mode].cpu,speed_settings[speed_mode].ram,speed_settings[speed_mode].bus);
 			
 			sceIoSync("ms0:", 1);
 			unsigned int buf[5];
@@ -523,13 +616,13 @@ void main_loop()
 						tunit = "Gb";
 					}
 			}
-			char info[128];
-			snprintf(info,128,"Total: %i%s (%iMb free)", total_size, tunit, total_free/*100/total_space*/);
+			char info[64];
+			snprintf(info,64,"Total: %i%s (%iMb free)", total_size, tunit, total_free/*100/total_space*/);
 			// Display Video Information
 			pspDebugScreenSetXY(1, starting_row + maximum_number_of_rows + 1);
 			pspDebugScreenPrintf(" %ix%i %s %.2ffps, %i:%02i:%02i %35.35s", vwidth, vheight, (vformat==1?"AVC":"PMP"), vrate, (int)(vframes/vrate/3600), (int)(vframes/vrate/60)%60, (int)(vframes/vrate)%60, info);
 			
-			char pos[128];
+			char pos[64];
 			pos[0]='\0';
 			if (vpos != 0)
 				{
@@ -543,28 +636,29 @@ void main_loop()
 						asp = "2.35";
 					
 					// Calculate saved position precisely with the float vrate value and display it
-					snprintf(pos, 128, "POS: %i:%02i:%02i @ %s", (int)(vpos/vrate/3600),(int)(vpos/vrate/60)%60, (int)(vpos/vrate)%60, asp);
+					snprintf(pos, 64, "| POS: %i:%02i:%02i @ %s", (int)(vpos/vrate/3600),(int)(vpos/vrate/60)%60, (int)(vpos/vrate)%60, asp);
 				}
 			
 			// Display USB Connection Status
 			if ((sceUsbGetState()&PSP_USB_CONNECTION_ESTABLISHED)==PSP_USB_CONNECTION_ESTABLISHED) {
 				pspDebugScreenSetXY(1, starting_row + maximum_number_of_rows + 2);
-				pspDebugScreenPrintf(" %-32.32s%33.33s", pos, "USB Status: Connected");
+				pspDebugScreenPrintf(" %i subtitle(s) %-26.26s%25.25s", vnsubs, pos, "USB Status: Connected");
 			} else {
 				pspDebugScreenSetXY(1, starting_row + maximum_number_of_rows + 2);
-				pspDebugScreenPrintf(" %-32.32s%33.33s", pos, "USB Status: Disconnected");
+				pspDebugScreenPrintf(" %i subtitle(s) %-26.26s%25.25s", vnsubs, pos, "USB Status: Disconnected");
 			}
 			pspDebugScreenSetTextColor(0xffffff);
 			pspDebugScreenSetBackColor(0x000000);
 			pspDebugScreenSetXY(37, starting_row + maximum_number_of_rows + 3);
 			pspDebugScreenPrintf("%30.30s", speed);
 			
-			sceKernelDelayThread(100000);
+			//sceKernelDelayThread(100000);
+			first_frame = 0;
 			}
 
 
 
-
+		first_frame = 1;
 		if (controller.Buttons & PSP_CTRL_TRIANGLE)
 			{
 			opendir_close(&directory);
@@ -574,6 +668,16 @@ void main_loop()
 		if (controller.Buttons & PSP_CTRL_START)
 			{
 			// refresh
+			opendir_close(&directory);
+			continue;
+			}
+
+		if (controller.Buttons & PSP_CTRL_SELECT)
+			{
+			// delete file
+			if (print_confirmation(directory.directory_entry[selected_entry].d_name))
+				sceIoRemove(directory.directory_entry[selected_entry].d_name);
+	
 			opendir_close(&directory);
 			continue;
 			}
